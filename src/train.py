@@ -403,9 +403,9 @@ if __name__=='__main__':
 	else:
 		# train, valid, test = sq_read_data('train'), sq_read_data('valid'), sq_read_data('test')
 		train, valid, test = read_data()
-		bert = DistilBertModel.from_pretrained("bert-base-uncased")
-		tokenizer = DistilBertTokenizer.from_pretrained("bert-base-uncased")
-		node_edge_detector = NodeEdgeDetector(bert, tokenizer, dropout=torch.tensor(0.5))
+		bert = BertModel.from_pretrained("bert-base-uncased")
+		tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+		node_edge_detector = mapping[model_type](bert, tokenizer, dropout=torch.tensor(0.5))
 		optimizer = AdamW
 		kw = {'lr':0.0002, 'weight_decay':0.1}
 		tl = TrainingLoop(node_edge_detector, optimizer, True, **kw)
