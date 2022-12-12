@@ -8,8 +8,13 @@ from utils import get_tf_idf_query_similarity
 from sklearn.metrics.pairwise import cosine_similarity
 from pattern.en import conjugate, lemma, lexeme,PRESENT,SG,PAST
 import sys
-
-
+import re
+import pyterrier as pt
+pt.init()
+checkpoint="http://www.dcs.gla.ac.uk/~craigm/colbert.dnn.zip"
+import pyterrier_colbert.indexing
+import logging
+logging.basicConfig(level=logging.WARNING)
 #### pattern python>=3.7 compatibility problem
 def pattern_stopiteration_workaround():
     try:
@@ -87,6 +92,47 @@ class ReverbKnowledgeBaseGraph:
 		print(nodes)
 		edges = self.edgesquery(edge)
 
+class ReverbKnowledgeBaseNN:
+	def __init__(self, path='../data/reverb_wikipedia_tuples-1.1.txt'):
+		super().__init__()
+		df = pd.read_csv(path, sep='\t', header=None)
+		df = df[:5000]
+		reverb_columns_name = ['ExID', 'arg1', 'rel', 'arg2', 'narg1', 'nrel', 'narg2', 'csents', 'conf', 'urls']
+		df.columns = reverb_columns_name
+		df = df.dropna()
+		df = df.drop_duplicates()
+		df['text'] = df.apply(lambda row:' '.join([row['arg1'], row['rel'], row['arg2']]).strip(), axis=1)
+		df['docno'] = (df.index).astype(str)
+		indexer = pyterrier_colbert.indexing.ColBERTIndexer(checkpoint, "/content", "colbertindex", chunksize=3)
+		indexer.index(df[['text', 'docno']].to_dict(orient="records"))
+		
+		pyterrier_colbert_factory = indexer.ranking_factory()
+		e2e = pyterrier_colbert_factory.end_to_end()
+		self.e2e = e2e
+
+
+	def NN_nodes_query(self, search_phrase, cutoff=2500):
+
+		q = re.sub(r'[^\w]', ' ', search_phrase)
+		ret = (self.e2e % cutoff).search(q)[['score', 'docno']]
+		return ret[:cutoff]
+
+	def NN_edge_query(self, search_phrase, cutoff=2500):
+
+		q = re.sub(r'[^\w]', ' ', search_phrase)
+		ret = (self.e2e % cutoff).search(q)[['score', 'docno']]
+		return ret
+
+	def query(self, node='Bill Gates', edge='Born'):
+		nodes_df = self.NN_nodes_query(node)
+		edges_df = self.NN_nodes_query(edge)
+		candidates = nodes_df.merge(edges_df, left_on='docno', right_on='docno', how='inner')
+		candidates['score'] = candidates['score_x']+candidates['score_y']
+		candidates.sort_values(by='score', ascending=False)
+		return candidates[:min(10, len(candidates))]['docno'].astype(int).to_list()
+		
+	
+
 class ReverbKnowledgeBase:
 	def __init__(self, path='../data/reverb_wikipedia_tuples-1.1.txt'):
 		super().__init__()
@@ -127,7 +173,7 @@ class ReverbKnowledgeBase:
 		sorted_ranks = {k: v for k, v in sorted(ranks.items(), key=lambda item:item[1], reverse=True)[:min(len(ranks), cutoff)]}
 		return sorted_ranks
 
-	def tfidf_query(self, node='Bill Gates', edge='Born'):
+	def query(self, node='Bill Gates', edge='Born'):
 		# print(edge)
 		edge_list = edge.split()
 		if len(edge_list)>=2 and edge_list[0]=='did':
@@ -169,7 +215,7 @@ class ReverbKnowledgeBase:
 			return sorted_pruned[:min(len(sorted_pruned), 100)]
 
 if __name__=='__main__':
-	RKBG = ReverbKnowledgeBase(r'D:\desktop\reverb_wikipedia_tuples-1.1.txt') #	'./sample_reverb_tuples.txt'
+	RKBNN = ReverbKnowledgeBaseNN('/content/reverb_wikipedia_tuples-1.1.txt') #	'./sample_reverb_tuples.txt'
 	# print(len(RKBG.nodes_vectorizer.vocabulary_), len(RKBG.edges_vectorizer.vocabulary_))
 	# print(RKBG.tfidf_query(node='fishkind', edge='grew up in'))
-	print(RKBG.tfidf_query(node='abegg', edge='did die'))
+	print(RKBNN.NN_query(node='abegg', edge='did die'))

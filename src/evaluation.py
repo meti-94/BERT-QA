@@ -8,6 +8,10 @@ Script to perform whole system Evaluation
 
 
 if __name__=='__main__':
+	similarity_type = sys.argv[1]
+	mapping = {'tfidf':ReverbKnowledgeBase,
+              'NN':ReverbKnowledgeBaseNN, 
+            }
 	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 	bert = BertModel.from_pretrained("bert-base-uncased")
 	tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
@@ -18,7 +22,7 @@ if __name__=='__main__':
 	loss = mse_loss
 	tl.load()
 
-	RKBG = ReverbKnowledgeBase()
+	RKBG = mapping[similarity_type]()
 
 	test_df = pd.read_excel('../data/test.xlsx')
 	actual = test_df['Reverb_no'].to_list()
@@ -27,11 +31,12 @@ if __name__=='__main__':
 		node, edge = tl.readable_predict(device, _input=row['Question'], print_result=False)
 		node = ' '.join(node); edge = ' '.join(edge)
 		node = node.replace(' ##', ''); edge = edge.replace(' ##', '')
-		print("The Question: ", row['Question'].lower().split())
-		print(f'Node: {node}, Edge: {edge}')
-		temp = RKBG.tfidf_query(node=node, edge=edge)
-		print('Sorted candidates: ', temp[:min(len(temp), 25)])
-		print('Actual line number: ', row['Reverb_no'])
+		if index%100==0:
+			print("The Question: ", row['Question'].lower().split())
+			print(f'Node: {node}, Edge: {edge}')
+		temp = RKBG.query(node=node, edge=edge)
+		# print('Sorted candidates: ', temp[:min(len(temp), 25)])
+		# print('Actual line number: ', row['Reverb_no'])
 		system_results.append(temp)
 	print(get_hit(actual, system_results))
 
