@@ -38,6 +38,8 @@ if __name__=='__main__':
 		# print('Sorted candidates: ', temp[:min(len(temp), 25)])
 		# print('Actual line number: ', row['Reverb_no'])
 		system_results.append(temp)
+	test_df['sys'] = system_results
+	test_df.to_excel('results.xlsx')
 	print(get_hit(actual, system_results))
 
 		

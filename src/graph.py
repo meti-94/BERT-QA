@@ -96,7 +96,7 @@ class ReverbKnowledgeBaseNN:
 	def __init__(self, path='../data/reverb_wikipedia_tuples-1.1.txt'):
 		super().__init__()
 		df = pd.read_csv(path, sep='\t', header=None)
-		df = df[:5000]
+		# df = df[:5000]
 		reverb_columns_name = ['ExID', 'arg1', 'rel', 'arg2', 'narg1', 'nrel', 'narg2', 'csents', 'conf', 'urls']
 		df.columns = reverb_columns_name
 		df = df.dropna()
@@ -129,7 +129,9 @@ class ReverbKnowledgeBaseNN:
 		candidates = nodes_df.merge(edges_df, left_on='docno', right_on='docno', how='inner')
 		candidates['score'] = candidates['score_x']+candidates['score_y']
 		candidates.sort_values(by='score', ascending=False)
-		return candidates[:min(10, len(candidates))]['docno'].astype(int).to_list()
+		candidates = candidates[:min(10, len(candidates))]['docno'].astype(int).to_list()
+		candidates = [[item] for item in candidates]
+		return candidates
 		
 	
 
