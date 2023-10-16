@@ -63,41 +63,79 @@ class MultiDepthNodeEdgeDetector(torch.nn.Module):
 
 
 class NodeEdgeDetector(torch.nn.Module):
-	'''
-	Neural Network architecture!
-	'''
-	def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
-		super().__init__(**kw)
-		self.bert = bert
-		dim = self.bert.config.hidden_size
-		self.nodestart = torch.nn.Linear(dim, 1)
-		self.nodeend = torch.nn.Linear(dim, 1)
-		
-		# self.edgestart = torch.nn.Linear(dim, 1)
-		# self.edgeend = torch.nn.Linear(dim, 1)
-		self.edgespan = torch.nn.Linear(dim, 1)
-		
-		self.dropout = torch.nn.Dropout(p=dropout)
-		self.clip_len = clip_len
+    '''
+    NodeEdgeDetector is a neural network architecture designed to recognize entity and relation 
+    spans in a question posed in natural language.
+    
+    This model is built on top of a pre-trained BERT model and introduces several additional 
+    linear layers to predict start and end positions of entity nodes and edge spans.
+    '''
+    
+    def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
+        """
+        Initialize the NodeEdgeDetector model.
+        
+        :param bert: Pre-trained BERT model
+        :param tokenizer: BERT tokenizer for tokenization
+        :param dropout: Dropout rate for regularization
+        :param clip_len: Flag to determine if sequence length should be clipped
+        """
+        super().__init__(**kw)
+        self.bert = bert  # BERT model
+        dim = self.bert.config.hidden_size  # Hidden size of BERT model
+        
+        # Linear layers to predict the start and end positions of entity nodes
+        self.nodestart = torch.nn.Linear(dim, 1)
+        self.nodeend = torch.nn.Linear(dim, 1)
+        
+        # Linear layer to predict the span of edges
+        self.edgespan = torch.nn.Linear(dim, 1)
+        
+        # Dropout layer for regularization
+        self.dropout = torch.nn.Dropout(p=dropout)
+        
+        # Flag to clip input sequence length
+        self.clip_len = clip_len
 
-		self.tokenizer = tokenizer
+        # BERT tokenizer
+        self.tokenizer = tokenizer
 
-	def forward(self, x):	   # x: (batsize, seqlen) ints
-		mask = (x != 0).long()
-		if self.clip_len:
-			maxlen = mask.sum(1).max().item()
-			maxlen = min(x.size(1), maxlen + 1)
-			mask = mask[:, :maxlen]
-			x = x[:, :maxlen]
-		bert_outputs = self.bert(x, attention_mask=mask, output_hidden_states=False)
-		lhs = bert_outputs.last_hidden_state
-		a = self.dropout(lhs)
-		logits_node_start = self.nodestart(lhs)
-		logits_node_end = self.nodeend(lhs)
-		logits_edge_span = self.edgespan(lhs)
-		logits = torch.cat([logits_node_start.transpose(1, 2), logits_node_end.transpose(1, 2), 
-							logits_edge_span.transpose(1, 2)], 1)
-		return logits
+    def forward(self, x):  # x: (batsize, seqlen) ints
+        """
+        Forward pass of the model.
+        
+        :param x: Input tensor of token IDs
+        :return: logits: Model output logits for node start, node end, and edge span
+        """
+        # Create an attention mask to identify non-zero tokens (used for variable-length sequences)
+        mask = (x != 0).long()
+        
+        # Optionally clip the sequence length to the maximum actual sequence length in the batch
+        if self.clip_len:
+            maxlen = mask.sum(1).max().item()
+            maxlen = min(x.size(1), maxlen + 1)
+            mask = mask[:, :maxlen]
+            x = x[:, :maxlen]
+        
+        # Obtain outputs from BERT model
+        bert_outputs = self.bert(x, attention_mask=mask, output_hidden_states=False)
+        lhs = bert_outputs.last_hidden_state  # Extract the last hidden state
+        
+        # Apply dropout
+        a = self.dropout(lhs)
+        
+        # Predict the start and end positions for nodes and the span for edges
+        logits_node_start = self.nodestart(lhs)
+        logits_node_end = self.nodeend(lhs)
+        logits_edge_span = self.edgespan(lhs)
+        
+        # Concatenate the logits for each prediction
+        logits = torch.cat([logits_node_start.transpose(1, 2), 
+                            logits_node_end.transpose(1, 2), 
+                            logits_edge_span.transpose(1, 2)], 1)
+        
+        return logits
+
 
 class BertCNN(torch.nn.Module):
 	def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
