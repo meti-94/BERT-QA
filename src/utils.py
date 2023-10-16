@@ -1,33 +1,44 @@
+# Importing necessary modules
 from sklearn.model_selection import train_test_split
 import numpy as np
 import os
 import logging
 from sklearn.metrics.pairwise import cosine_similarity
-
+# Setting up basic logging configuration
 logging.basicConfig(level=logging.DEBUG)
 
+
+# Function to read specified data type files from given path
 def sq_read_data(datatype):
+	# Paths to tokens, relations and entities data based on specified datatype
 	token_path=f'../bertified/SQ/{datatype}_tokenmat.npy'
 	relation_path=f'../bertified/SQ/{datatype}_relations.npy' 
 	entity_path=f'../bertified/SQ/{datatype}_entities.npy'
-	
+
+	# Load the data from the specified paths
 	tokens_matrix = np.load(token_path)
 	edgs_spans = np.load(relation_path)
 	nods_borders = np.load(entity_path)
+	# Combine entities and relations data along the columns
 	borders = np.concatenate((nods_borders, edgs_spans), axis=1)
 	
 	return (tokens_matrix, borders)
 
+# Function to read and split data into training, validation, and testing sets
 def read_data(path='../bertified/'):
+	# Load data from the specified directory
 	tokens_matrix = np.load(os.path.join(path, 'tokenmat.npy'))
 	nods_borders = np.load(os.path.join(path, 'entities.npy'))
 	edgs_spans = np.load(os.path.join(path, 'relations.npy'))
 	borders = np.concatenate((nods_borders, edgs_spans), axis=1)
+	# Split data into training, validation, and test sets
 	X_train, X_test, y_train, y_test = train_test_split(tokens_matrix, borders, test_size=0.30, random_state=42)
 	X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.15, random_state=42)
 	return (X_train, y_train), (X_valid, y_valid), (X_test, y_test)		
 
+# Function to calculate F1 score for nodes prediction
 def nodes_get_f1(predicts, golden):
+	# Compute overlaps between predictions and ground truth for start and end boundaries
 	gold_start, gold_end = golden[:, 0], golden[:, 1]
 	pred_start, pred_end = predicts[:, 0], predicts[:, 1]
 	overlap_start = np.maximum(pred_start, gold_start)
@@ -53,6 +64,7 @@ def nodes_get_f1(predicts, golden):
 	logging.info("Span accuracy")
 	logging.info(acc)
 
+# Function to calculate precision, recall and F1 scores for binary classification
 def get_PRF(actual, predicted):
 	precision, recall = 0, 0
 	for act, pred in zip(actual, predicted):
@@ -67,6 +79,7 @@ def get_PRF(actual, predicted):
 	f1 = np.divide(2 * recall * precision, recall + precision)
 	return (f1, precision, recall)
 
+# Function to calculate F1 score for edges prediction
 def edges_get_f1(predicts, golden):
 	rows, columns = golden.shape
 	preds, actual, common, acc = 0, 0, 0, 0
@@ -100,7 +113,7 @@ def edges_get_f1(predicts, golden):
 	logging.info("Span accuracy")
 	logging.info(acc/rows)
 
-
+# Function to compute cosine similarity between a query and a set of documents
 def get_tf_idf_query_similarity(vectorizer, docs_tfidf, query):
     """
     vectorizer: TfIdfVectorizer model
@@ -113,6 +126,7 @@ def get_tf_idf_query_similarity(vectorizer, docs_tfidf, query):
     cosineSimilarities = cosine_similarity(query_tfidf, docs_tfidf).flatten()
     return cosineSimilarities
 
+# Function to get hit scores based on the ranking of the predicted items
 def get_hit(actual, predict):
 	hit_1, hit_3, hit_5, hit_10, hit_100 = 0, 0, 0, 0, 0
 	for index, item in enumerate(actual):
@@ -138,6 +152,7 @@ def get_hit(actual, predict):
 	return hit_1, hit_3, hit_5, hit_10, hit_100
 				 
 if __name__=='__main__':
+	# Read data and split it into training, validation and test sets
 	train, valid, test = read_data()
 	print(train[0].shape, train[1].shape)
 	# get_f1(valid[1][:, :2], valid[1][:, :2])
