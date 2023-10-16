@@ -44,8 +44,10 @@ pip install -r requirements.txt
 
 ## Workflow Diagram
 
-To understand the training and inference workflow, you can refer to the diagram provided at:
-[rsc/OV.jpg](rsc/OV.jpg).
+
+To understand the training and inference workflow, please refer to the diagram provided below:
+
+![BERT-QA Workflow Diagram](rsc/OV.jpg).
 
 ## Contribution & Contact
 
