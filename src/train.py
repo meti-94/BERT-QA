@@ -22,44 +22,76 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 class MultiDepthNodeEdgeDetector(torch.nn.Module):
-	'''
-	Neural Network architecture!
-	'''
-	def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
-		super().__init__(**kw)
-		self.bert = bert
-		self.concat_last_n = 3
-		dim = self.bert.config.hidden_size
-		self.nodestart = torch.nn.Linear(self.concat_last_n * self.bert.config.hidden_size, 1)
-		self.nodeend = torch.nn.Linear(self.concat_last_n * self.bert.config.hidden_size, 1)
-		
-		self.edgespan = torch.nn.Linear(self.concat_last_n * self.bert.config.hidden_size, 1)
-		
-		self.dropout = torch.nn.Dropout(p=dropout)
-		# self.linear = torch.nn.Linear(self.concat_last_n * self.bert.config.hidden_size, 2)
-		self.clip_len = clip_len
+    '''
+    Neural Network architecture to extract named-entity and relation from a sentence.
+    It leverages BERT for embeddings and has specialized layers to detect node start, node end, and edge span.
+    '''
+    def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
+        super().__init__(**kw)
+        
+        # Pre-trained BERT model for embeddings
+        self.bert = bert
+        
+        # Number of last hidden states to concatenate from BERT
+        self.concat_last_n = 3
+        
+        # Dimension size based on BERT's hidden size
+        dim = self.bert.config.hidden_size
+        
+        # Linear layer for node start detection
+        self.nodestart = torch.nn.Linear(self.concat_last_n * self.bert.config.hidden_size, 1)
+        
+        # Linear layer for node end detection
+        self.nodeend = torch.nn.Linear(self.concat_last_n * self.bert.config.hidden_size, 1)
+        
+        # Linear layer for edge span detection
+        self.edgespan = torch.nn.Linear(self.concat_last_n * self.bert.config.hidden_size, 1)
+        
+        # Dropout layer
+        self.dropout = torch.nn.Dropout(p=dropout)
+        
+        # A boolean to check if sequence lengths should be clipped
+        self.clip_len = clip_len
 
-		self.tokenizer = tokenizer
+        # Tokenizer for potential preprocessing needs
+        self.tokenizer = tokenizer
 
-	def forward(self, x):	   # x: (batsize, seqlen) ints
-		batch_size, seq_size = x.size()
-		mask = (x != 0).long()
-		if self.clip_len:
-			maxlen = mask.sum(1).max().item()
-			maxlen = min(x.size(1), maxlen + 1)
-			mask = mask[:, :maxlen]
-			x = x[:, :maxlen]
-		bert_outputs = self.bert(x, attention_mask=mask, output_hidden_states=True)
-		
-		hidden = torch.cat(bert_outputs.hidden_states[-self.concat_last_n:], dim=-1)
-		
-		a = self.dropout(hidden)
-		logits_node_start = self.nodestart(a)
-		logits_node_end = self.nodeend(a)
-		logits_edge_span = self.edgespan(a)
-		logits = torch.cat([logits_node_start.transpose(1, 2), logits_node_end.transpose(1, 2), 
-							logits_edge_span.transpose(1, 2)], 1)
-		return logits
+    def forward(self, x):  # x: (batsize, seqlen) ints
+        # Get the batch size and sequence size
+        batch_size, seq_size = x.size()
+        
+        # Create a mask for non-padding tokens
+        mask = (x != 0).long()
+        
+        # If clip_len is True, reduce the sequence length to max non-padding length
+        if self.clip_len:
+            maxlen = mask.sum(1).max().item()
+            maxlen = min(x.size(1), maxlen + 1)
+            mask = mask[:, :maxlen]
+            x = x[:, :maxlen]
+        
+        # Get BERT outputs
+        bert_outputs = self.bert(x, attention_mask=mask, output_hidden_states=True)
+        
+        # Concatenate the last 'concat_last_n' hidden states
+        hidden = torch.cat(bert_outputs.hidden_states[-self.concat_last_n:], dim=-1)
+        
+        # Apply dropout
+        a = self.dropout(hidden)
+        
+        # Compute logits for node start, node end, and edge span
+        logits_node_start = self.nodestart(a)
+        logits_node_end = self.nodeend(a)
+        logits_edge_span = self.edgespan(a)
+        
+        # Combine all logits
+        logits = torch.cat([
+            logits_node_start.transpose(1, 2),
+            logits_node_end.transpose(1, 2),
+            logits_edge_span.transpose(1, 2)
+        ], 1)
+        
+        return logits
 
 
 class NodeEdgeDetector(torch.nn.Module):
@@ -138,64 +170,120 @@ class NodeEdgeDetector(torch.nn.Module):
 
 
 class BertCNN(torch.nn.Module):
-	def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
-		super().__init__(**kw)
-		self.bert = bert
-		dim = self.bert.config.hidden_size
-		self.nodestart = torch.nn.Linear(160, 35)
-		self.nodeend = torch.nn.Linear(160, 35)
-		self.edgespan = torch.nn.Linear(160, 35)
-		self.dropout = torch.nn.Dropout(p=dropout)
-		self.clip_len = clip_len
-		self.tokenizer = tokenizer
-		filter_sizes = [1,2,3,4,5]
-		num_filters = 32
-		embed_size = 768
-		self.convs1 = nn.ModuleList([nn.Conv2d(4, num_filters, (K, embed_size)) for K in filter_sizes])
-		
+    '''
+    Neural Network architecture that combines BERT embeddings with Convolutional Neural Networks (CNN) 
+    to extract named-entity and relation from a sentence.
+    '''
+    def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
+        super().__init__(**kw)
+        
+        # Pre-trained BERT model for embeddings
+        self.bert = bert
+        
+        # Dimension size based on BERT's hidden size
+        dim = self.bert.config.hidden_size
+        
+        # Linear layers for node start, node end, and edge span detection
+        self.nodestart = torch.nn.Linear(160, 35)
+        self.nodeend = torch.nn.Linear(160, 35)
+        self.edgespan = torch.nn.Linear(160, 35)
+        
+        # Dropout layer
+        self.dropout = torch.nn.Dropout(p=dropout)
+        
+        # A boolean to check if sequence lengths should be clipped
+        self.clip_len = clip_len
+        
+        # Tokenizer for potential preprocessing needs
+        self.tokenizer = tokenizer
+        
+        # Define filter sizes and number of filters for the CNN
+        filter_sizes = [1,2,3,4,5]
+        num_filters = 32
+        embed_size = 768
+        
+        # Convolutional layers
+        self.convs1 = nn.ModuleList([nn.Conv2d(4, num_filters, (K, embed_size)) for K in filter_sizes])
+        
+    def forward(self, x):  # x: (batsize, seqlen) ints
+        # Create a mask for non-padding tokens
+        mask = (x != 0).long()
+        
+        # If clip_len is True, reduce the sequence length to max non-padding length
+        if self.clip_len:
+            maxlen = mask.sum(1).max().item()
+            maxlen = min(x.size(1), maxlen + 1)
+            mask = mask[:, :maxlen]
+            x = x[:, :maxlen]
+        
+        # Get BERT outputs for the last 4 hidden states
+        x = self.bert(x, attention_mask=mask, output_hidden_states=True)[2][-4:]
+        
+        # Stack the 4 hidden states along a new dimension
+        x = torch.stack(x, dim=1)
+        
+        # Pass the stacked hidden states through the convolutional layers
+        x = [F.relu(conv(x)).squeeze(3) for conv in self.convs1] 
+        
+        # Apply max pooling
+        x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]  
+        
+        # Concatenate the output from all convolutional layers
+        x = torch.cat(x, 1)
+        
+        # Apply dropout
+        x = self.dropout(x)
+        
+        # Compute logits for node start, node end, and edge span
+        logits_node_start = torch.unsqueeze(self.nodestart(x), 1)
+        logits_node_end = torch.unsqueeze(self.nodeend(x), 1)
+        logits_edge_span = torch.unsqueeze(self.edgespan(x), 1)
+        
+        # Combine all logits ensuring they are of the same length as input sequence
+        b, l = x.size()  # Extract batch size and length for slicing
+        logits = torch.cat([
+            logits_node_start[:, :, :l], 
+            logits_node_end[:, :, :l], 
+            logits_edge_span[:, :, :l]
+        ], 1)
+        
+        return logits
 
-	def forward(self, x):	   # x: (batsize, seqlen) ints
-		mask = (x != 0).long()
-		if self.clip_len:
-			maxlen = mask.sum(1).max().item()
-			maxlen = min(x.size(1), maxlen + 1)
-			mask = mask[:, :maxlen]
-			x = x[:, :maxlen]
-		b, l = x.size()
-		x = self.bert(x, attention_mask=mask, output_hidden_states=True)[2][-4:]
-		x = torch.stack(x, dim=1)
-		x = [F.relu(conv(x)).squeeze(3) for conv in self.convs1] 
-		x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]  
-		x = torch.cat(x, 1)
-		x = self.dropout(x)
-		logits_node_start = torch.unsqueeze(self.nodestart(x), 1)
-		logits_node_end = torch.unsqueeze(self.nodeend(x), 1)
-		logits_edge_span = torch.unsqueeze(self.edgespan(x), 1)
-		# print(logits_node_start.size(), logits_node_end.size(), logits_edge_span.size())
-		logits = torch.cat([logits_node_start[:, :, :l], logits_node_end[:, :, :l], 
-							logits_edge_span[:, :, :l]], 1)
-		return logits
 
 class BertLSTMCRF(torch.nn.Module):
-	def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
-		super().__init__(**kw)
-		self.bert = bert
-		dim = self.bert.config.hidden_size
-		self.nodestart = torch.nn.Linear(dim, 1)
-		self.nodeend = torch.nn.Linear(dim, 1)
-		
-		# self.edgestart = torch.nn.Linear(dim, 1)
-		# self.edgeend = torch.nn.Linear(dim, 1)
-		self.edgespan = torch.nn.Linear(dim, 1)
-		
-		self.dropout = torch.nn.Dropout(p=dropout)
-		self.clip_len = clip_len
-
-		self.tokenizer = tokenizer
-
-		self.crf_entity = CRF(2, batch_first=True)
-		self.crf_relation = CRF(2, batch_first=True)
-		self.lstm = torch.nn.LSTM(
+    '''
+    Neural Network architecture that combines BERT embeddings with LSTM and Conditional Random Fields (CRF) 
+    to extract named-entity and relation from a sentence.
+    '''
+    def __init__(self, bert, tokenizer, dropout=0.5, clip_len=True, **kw):
+        super().__init__(**kw)
+        
+        # Pre-trained BERT model for embeddings
+        self.bert = bert
+        
+        # Dimension size based on BERT's hidden size
+        dim = self.bert.config.hidden_size
+        
+        # Linear layers for node start, node end, and edge span detection
+        self.nodestart = torch.nn.Linear(dim, 1)
+        self.nodeend = torch.nn.Linear(dim, 1)
+        self.edgespan = torch.nn.Linear(dim, 1)
+        
+        # Dropout layer
+        self.dropout = torch.nn.Dropout(p=dropout)
+        
+        # A boolean to check if sequence lengths should be clipped
+        self.clip_len = clip_len
+        
+        # Tokenizer for potential preprocessing needs
+        self.tokenizer = tokenizer
+        
+        # CRF layers for entity and relation extraction
+        self.crf_entity = CRF(2, batch_first=True)
+        self.crf_relation = CRF(2, batch_first=True)
+        
+        # LSTM layer for sequence modeling
+        self.lstm = torch.nn.LSTM(
             input_size=dim,
             hidden_size=100,
             num_layers=2,
@@ -203,26 +291,43 @@ class BertLSTMCRF(torch.nn.Module):
             batch_first=True,
             bidirectional=True,
         )
-	def forward(self, x):	   # x: (batsize, seqlen) ints
-		mask = (x != 0).long()
-		if self.clip_len:
-			maxlen = mask.sum(1).max().item()
-			maxlen = min(x.size(1), maxlen + 1)
-			mask = mask[:, :maxlen]
-			x = x[:, :maxlen]
-		bert_outputs = self.bert(x, attention_mask=mask, output_hidden_states=False)
-		lhs = bert_outputs.last_hidden_state
-		a = self.dropout(lhs)
-		lstm_out, *_ = self.lstm(a)
-		logits_node_start = self.nodestart(lhs)
-		logits_node_end = self.nodeend(lhs)
-		logits_edge_span = self.edgespan(lhs)
-		# logits_edge_start = self.edgestart(lhs)
-		# logits_edge_end = self.edgeend(lhs)
-		# print(logits_node_start.size(), logits_node_end.size(), logits_edge_span.size())
-		logits = torch.cat([logits_node_start.transpose(1, 2), logits_node_end.transpose(1, 2), 
-							logits_edge_span.transpose(1, 2)], 1)
-		return logits
+
+    def forward(self, x):  # x: (batsize, seqlen) ints
+        # Create a mask for non-padding tokens
+        mask = (x != 0).long()
+        
+        # If clip_len is True, reduce the sequence length to max non-padding length
+        if self.clip_len:
+            maxlen = mask.sum(1).max().item()
+            maxlen = min(x.size(1), maxlen + 1)
+            mask = mask[:, :maxlen]
+            x = x[:, :maxlen]
+        
+        # Get BERT outputs for the last hidden state
+        bert_outputs = self.bert(x, attention_mask=mask, output_hidden_states=False)
+        
+        # Extract the last hidden state
+        lhs = bert_outputs.last_hidden_state
+        
+        # Apply dropout
+        a = self.dropout(lhs)
+        
+        # Get LSTM outputs
+        lstm_out, *_ = self.lstm(a)
+        
+        # Compute logits for node start, node end, and edge span
+        logits_node_start = self.nodestart(lhs)
+        logits_node_end = self.nodeend(lhs)
+        logits_edge_span = self.edgespan(lhs)
+        
+        # Combine all logits
+        logits = torch.cat([
+            logits_node_start.transpose(1, 2),
+            logits_node_end.transpose(1, 2), 
+            logits_edge_span.transpose(1, 2)
+        ], 1)
+        
+        return logits
 
 
 class BordersDataset(Dataset):
